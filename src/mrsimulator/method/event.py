@@ -47,6 +47,7 @@ class Event(Parseable):
     rotor_angle: float = Field(default=0.955316618, ge=0, le=1.5707963268)
     freq_contrib: List[FrequencyEnum] = default_freq_contrib
     transition_query: TransitionQuery = TransitionQuery()
+    transition_query_list: List[Dict] = []
     # user_variables: List = None
 
     property_unit_types: ClassVar = {
@@ -99,3 +100,16 @@ class Event(Parseable):
         lst_ = set([item.value for item in self.freq_contrib])
         intersect = lst_.intersection(set(freq_list_all))
         return [1 if item in intersect else 0 for item in freq_list_all]
+
+    def as_dict(self) -> dict:
+        """Return the event object as a dictonary with parameter name as key and 
+        parameter value as value
+        """
+        _dict = {
+            "magnetic_flux_density": self.magnetic_flux_density,
+            "rotor_frequency": self.rotor_frequency,
+            "rotor_angle": self.rotor_angle,
+            "transition_query": self.transition_query_list,
+            "fraction": self.fraction
+        }
+        return _dict

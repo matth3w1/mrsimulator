@@ -24,6 +24,7 @@ from .utils import D_symmetry_indexes
 from .utils import expand_spectral_dimension_object
 from .utils import P_symmetry_indexes
 from .utils import query_permutations
+from .utils import expand_transition_queries
 
 __author__ = "Deepansh J. Srivastava"
 __email__ = "srivastava.89@osu.edu"
@@ -289,8 +290,8 @@ class Method(Parseable):
         return temp_dict
 
     def events_to_dataframe(self) -> pd.DataFrame:
-        """Returns events array as DataFrame with event number as column and
-        attribute names as indexes
+        """Returns events array as DataFrame with attribute name as columns and
+        event number as indexes
 
         Returns:
             Pandas DataFrame object
@@ -300,9 +301,17 @@ class Method(Parseable):
         for dim in self.spectral_dimensions:
             events.extend(dim.events)
 
-        data = [ev.json() for ev in events]
-        # Formatting here
+        data = [ev.as_dict() for ev in events]
+        # Additional Formatting
         df = pd.DataFrame(data)
+
+        _dict = expand_transition_queries(
+            transition_queries=df["transition_query"], 
+            isotope=list(set([item.symbol for item in self.channels])),  # Is there a better place to grab isotopes from
+            channel=[item.symbol for item in self.channels],)
+        for k, v in _dict.items():
+            df[k] = v
+        
         return df
 
     def _df_remove_properties(self, df, properties) -> pd.DataFrame:
@@ -318,30 +327,15 @@ class Method(Parseable):
             Altered Pandas DataFrame object
 
         """
-        fraction_row = df.pop("fraction")
+        fraction_list = df.pop("fraction")
         if properties is not None:
             df.drop(columns=np.setdiff1d(df.columns, properties), inplace=True)
         else:
             for col in df.columns:
-                print(col)
-                print(df[col].value_counts().size)
                 if df[col].value_counts().size == 1:
                     df.drop(columns=col, inplace=True)
-        df["fraction"] = fraction_row
-        return df
-
-    def _df_expand_transition_pathways(self, df) -> pd.DataFrame:
-        """Takes the transition_query dict from each event number in dataframe
-        and adds columns for symmetry pathways
-
-        Parameters:
-            df: DataFrame to expand into
-
-        Returns:
-            Altered Pandas DataFrame object
-
-         """
-
+        df.drop(columns="transition_query", inplace=True)
+        df["fraction"] = fraction_list
         return df
 
     def _get_transition_pathways(self, spin_system):
@@ -430,47 +424,44 @@ class Method(Parseable):
         Returns:
             Matplotlib fig: Figure to be plotted
         """
-
         df = self.events_to_dataframe()
         df = self._df_remove_properties(df, properties)
+        print(df.columns)
 
-        f_lst = [0] + [sum(df["fraction"][:i + 1]) for i in range(df.shape[0])]
-        x_data = [x for i in range(len(f_lst) - 1) for x in (f_lst[i], f_lst[i + 1])]
+        # Create x points for plotting
+        tmp = [0] + [sum(df["fraction"][:i+1]) for i in range(df.shape[0])]
+        x_data = [x for i in range(len(tmp)-1) for x in (tmp[i], tmp[i+1])]
+        fig_len = x_data[-1]
 
-        # Construct plot
         fig, axs = plt.subplots(
-            nrows=(df.shape[0] - 1),
+            nrows=(df.shape[1] - 1),
             ncols=1,
-            figsize=(len(self.spectral_dimensions) * 2, df.shape[0] * 2),
+            figsize=(fig_len * 2, df.shape[0] * 2),
             sharex=True,
             gridspec_kw={'hspace': 0.0}
         )
 
         axs = [axs] if not isinstance(axs, np.ndarray) else axs
-        axs[0].set_xlim([0, len(self.spectral_dimensions)])
-        axs[0].set_xticks(np.arange(0.0, len(self.spectral_dimensions), 1.0))
+        axs[0].set_xlim([0, fig_len])
+        axs[0].set_xticks(np.arange(0.0, fig_len, 1.0))
 
         # Plot data and simple formatting for subplots y axis
         for i, ax in enumerate(axs):
-            colors = ['b', 'r', 'g', 'orange']
-            if df.columns[i] is "p" or df.columns[i] is "d":
-                for path in self.get_symmetry_pathways(df.iloc[i]):
-                    ax.plot(x_data, [num for j in path for num in (j, j)],
-                            color=colors.pop(0), alpha=0.6)
-            else:
-                ax.plot(x_data, [num for j in df.iloc[i] for num in (j, j)],
-                        color='b', alpha=0.6)
+            print([num for j in df[df.columns[i]] for num in (j, j)])
+            ax.plot(
+                x_data, 
+                [num for j in df[df.columns[i]] for num in (j, j)],
+                color='b', 
+                #alpha=0.6
+                )
 
             # Formatting of y axis
-            _ylabel = " ".join(df.index[i].split("_"))
-            if df.index[i] in self.property_units:
-                _ylabel += " ({})".format(self.property_units[df.index[i]])
-            ax.set_ylabel(ylabel=_ylabel)
+            ax.set_ylabel(ylabel=df.columns[i])
             ax.yaxis.set_major_formatter(mpl.ticker.FormatStrFormatter('%.2f'))
             ax.grid(axis='both', color='g', alpha=0.2)
             for side in ['top', 'bottom', 'left', 'right']:
-                ax.spines[side].set_linewidth(1.5)  # Set thickness of axis
+                ax.spines[side].set_linewidth(1.5)
 
-        fig.suptitle(self.name if self.name is not None else "Method Name")
+        fig.suptitle(self.name if self.name is not None else "Method")
         fig.tight_layout()
         return fig

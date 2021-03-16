@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from functools import reduce
 from itertools import permutations
+import warnings
 
 import numpy as np
 
@@ -104,7 +105,7 @@ def query_permutations(query, isotope, channel, transition_symmetry="P"):
             return np.asarray([])
 
         n_sites_channel_i = iso_dict[channel_id].size
-        channel_query = query_symmetry[f"channel-{i+1}"]
+        channel_query = query_symmetry[f"channel-{i+1}"]  # Slice of channel-i
 
         temp_P = []
         for item in channel_query:
@@ -125,3 +126,64 @@ def query_permutations(query, isotope, channel, transition_symmetry="P"):
         P_expanded[:, iso_dict[channel[i]]] = iso_trans_symmetry
 
     return P_expanded
+
+def query_symmetry_pathways(query, isotope, channel, transition_symmetry="P"):
+    """
+    Determines unpermutated symmetry pathways from given query and returns a 
+    list of channelwise symmetry pathways
+
+    Args:
+        query: List of transition_query dicts
+        channel: List of channels as atomic number followed by symbol. Eg. '29Si', '1H'
+        isotope: List of isotopes within the spin system. Eg. ['29Si', '29Si', '1H']
+        transition_symmetry: str object. Derived from a transition query
+
+    Returns:
+        _list: List of symmetry pathways
+    """
+
+    _list = []
+    iso_dict = get_iso_dict(channel=channel, isotope=isotope)
+
+    for i, channel_id in enumerate(channel):
+        # Check if method's channel isotope is present in the spin system
+        if channel_id not in iso_dict:
+            warnings.warn(f"Channel {channel_id} is not in list of isotopes")
+            return []
+
+        n_sites_channel_i = iso_dict[channel_id].size
+        temp = []
+        
+        for item in query:
+            # Ensure query dict has has specified channel
+            if f"channel-{i+1}" not in item:
+                warnings.warn(f"channel-{i+1} is not spesified in provided query")
+                return []
+
+            sym = item[f"channel-{i+1}"][transition_symmetry]
+            temp += sym + (n_sites_channel_i - len(sym)) * [0]
+
+        _list.append(temp)
+
+    return _list
+
+def expand_transition_queries(transition_queries, isotope, channel):
+    """Takes list of transition_query objects and expands the symmetries of into
+    individual lists and returns dict
+
+    Args:
+        transition_queries: List object of eventwise transition_query objects
+        channel: List of channels as atomic number followed by symbol. Eg. '29Si', '1H'
+        isotope: List of isotopes within the spin system. Eg. ['29Si', '29Si', '1H']
+
+    Returns:
+        _dict: dict object with "P" and "D" as keys and list of channelwise sums as values
+    """
+    _dict = {f"{s}{i}": [] for i in range(len(channel)) for s in ("P", "D")}
+    for query in transition_queries:
+        for i, path in enumerate(query_symmetry_pathways(query, isotope, channel, "P")):
+            _dict[f"P{i}"].append(sum(path))
+        for i, path in enumerate(query_symmetry_pathways(query, isotope, channel, "D")):
+            _dict[f"D{i}"].append(sum(path))
+    
+    return _dict
